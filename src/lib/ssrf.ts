@@ -208,6 +208,10 @@ export function createSSRFAgent(options: { allowPrivate?: boolean } = {}): Agent
 
 const GLOBAL_FETCH_WRAPPED = Symbol.for('libretv.ssrf.fetch.wrapped');
 
+function isCloudflareWorkers(): boolean {
+  return typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+}
+
 /**
  * 安装安全的 fetch SSRF 防护包装器。
  * 仅在 runWithSSRFProtection 激活的作用域内生效，自动注入安全专用的 Agent，
@@ -223,8 +227,10 @@ const GLOBAL_FETCH_WRAPPED = Symbol.for('libretv.ssrf.fetch.wrapped');
  *   表现得像「网络挂了」。连不带自定义 connector 的裸 `new Agent()` 也一样失败，
  *   说明与我们的 safeLookup 无关，纯粹是跨副本不兼容。
  * 用同一份 undici 的 fetch 之后，运行时内置 undici 怎么换代都影响不到这里。
+ * Cloudflare Workers 中跳过安装：其 node:tls 不支持 ALPNProtocols，undici 连接器对每个 https 请求都会报错，此时保留运行时原生 fetch。
  */
 export function installFetchSSRFProtection(): void {
+  if (isCloudflareWorkers()) return;
   const g = globalThis as unknown as Record<symbol, boolean>;
   if (g[GLOBAL_FETCH_WRAPPED]) return;
   g[GLOBAL_FETCH_WRAPPED] = true;

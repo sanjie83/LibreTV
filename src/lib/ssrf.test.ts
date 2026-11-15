@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import http from 'node:http';
-import { isPrivateIP, isValidProxyUrl, runWithSSRFProtection } from './ssrf';
+import { installFetchSSRFProtection, isPrivateIP, isValidProxyUrl, runWithSSRFProtection } from './ssrf';
 
 describe('isPrivateIP', () => {
   it.each([
@@ -222,6 +222,25 @@ describe('DNS Rebinding & Connection SSRF Protection (#941)', () => {
       expect(res instanceof Response).toBe(false);
     } finally {
       server.close();
+    }
+  });
+
+  it('Cloudflare Workers 中不替换全局 fetch，避免 undici 连接器报 ALPNProtocols 错误', () => {
+    const flag = Symbol.for('libretv.ssrf.fetch.wrapped');
+    const g = globalThis as unknown as Record<symbol, boolean>;
+    const savedFlag = g[flag];
+    const savedFetch = globalThis.fetch;
+    const nativeFetch = (async () => new Response('native')) as typeof fetch;
+    vi.stubGlobal('navigator', { userAgent: 'Cloudflare-Workers' });
+    delete g[flag];
+    globalThis.fetch = nativeFetch;
+    try {
+      installFetchSSRFProtection();
+      expect(globalThis.fetch).toBe(nativeFetch);
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.fetch = savedFetch;
+      g[flag] = savedFlag;
     }
   });
 });
